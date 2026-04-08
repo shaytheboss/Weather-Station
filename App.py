@@ -1,109 +1,58 @@
 import streamlit as st
 import requests
-import pandas as pd
-from datetime import datetime, timezone
 
-# הגדרות דף Elite
-st.set_page_config(page_title="SKYCAST ELITE | OSINT Weather", page_icon="⚡", layout="wide")
+# UI/UX Setup
+st.set_page_config(page_title="SkyCast Elite", page_icon="📡", layout="wide")
 
-# CSS מתקדם ל-UI/UX ברמה הגבוהה ביותר
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@300;600&display=swap');
-    
-    .stApp { background-color: #05070a; color: #e6edf3; }
-    .metric-container {
-        background: rgba(23, 27, 33, 0.8);
-        border: 1px solid #30363d;
-        border-radius: 12px;
-        padding: 20px;
-        text-align: center;
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8);
+    .main { background-color: #0e1117; color: white; font-family: 'Inter', sans-serif; }
+    .metric-card {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 15px; padding: 20px; text-align: center;
     }
-    .main-title {
-        font-family: 'Orbitron', sans-serif;
-        letter-spacing: 5px;
-        background: linear-gradient(90deg, #58a6ff, #bc8cff);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        font-size: 3rem;
-        font-weight: 700;
-        text-align: center;
-    }
-    .status-bar {
-        padding: 10px;
-        border-radius: 5px;
-        font-weight: bold;
-        text-transform: uppercase;
-        letter-spacing: 2px;
-        text-align: center;
-        margin-bottom: 20px;
+    .stButton>button {
+        background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
+        color: white; border-radius: 12px; width: 100%;
     }
     </style>
     """, unsafe_allow_html=True)
 
-def get_weather_data(icao):
+def get_weather(icao):
     token = "_uQltLt28HcleET_j3ys_OOlLJdnzmwQS5hqJQ3b9t0"
     url = f"https://avwx.rest/api/metar/{icao}"
-    headers = {"Authorization": f"Bearer {token}"}
     try:
-        res = requests.get(url, headers=headers)
+        res = requests.get(url, headers={"Authorization": f"Bearer {token}"})
         return res.json() if res.status_code == 200 else None
     except: return None
 
-# ניהול מצב (State) למעקב אחר מגמת לחץ
-if 'last_press' not in st.session_state:
-    st.session_state.last_press = {}
+st.markdown("<h1 style='text-align: center;'>SKYCAST <span style='color: #4facfe;'>ELITE</span></h1>", unsafe_allow_html=True)
 
-# Header
-st.markdown("<h1 class='main-title'>SKYCAST ELITE</h1>", unsafe_allow_html=True)
-utc_now = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
-st.markdown(f"<p style='text-align: center; color: #8b949e;'>SYSTEM TIME: {utc_now} | SECURE DATA LINK ACTIVE</p>", unsafe_allow_html=True)
+cities = {"Tel Aviv": "LLBG", "London": "EGLL", "New York": "KJFK", "Paris": "LFPG", "Larnaca": "LCLK"}
+sel_city = st.selectbox("", list(cities.keys()))
+if st.button("RECALIBRATE"): st.rerun()
 
-# Sidebar Control
-with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/2503/2503508.png", width=100)
-    st.markdown("### COMMAND CENTER")
-    cities = {
-        "TEL AVIV (LLBG)": "LLBG",
-        "LONDON (EGLL)": "EGLL",
-        "NEW YORK (KJFK)": "KJFK",
-        "TOKYO (RJTT)": "RJTT",
-        "LARNACA (LCLK)": "LCLK"
-    }
-    selected_city = st.selectbox("TARGET LOCATION", list(cities.keys()))
-    icao = cities[selected_city]
-    refresh = st.button("SYNC SENSORS")
-
-data = get_weather_data(icao)
+data = get_weather(cities[sel_city])
 
 if data:
-    temp = data['temperature']['value']
-    press = data['altimeter']['value']
-    wind = data['wind_speed']['value']
-    raw = data['raw']
+    temp, press, wind, raw = data['temperature']['value'], data['altimeter']['value'], data['wind_speed']['value'], data['raw']
     
-    # 1. חישוב מגמת לחץ (Trend)
-    trend_icon = "➡️"
-    if icao in st.session_state.last_press:
-        prev = st.session_state.last_press[icao]
-        if press > prev: trend_icon = "📈 RISING"
-        elif press < prev: trend_icon = "📉 DROPPING"
-    st.session_state.last_press[icao] = press
+    # Image Logic
+    img = "https://images.unsplash.com/photo-1504608524841-42fe6f032b4b?w=800"
+    if any(x in raw.lower() for x in ['ra', 'dz', 'sh']): img = "https://images.unsplash.com/photo-1515694346937-94d85e41e6f0?w=800"
+    
+    st.image(img, use_container_width=True)
+    
+    # Metrics
+    m1, m2, m3 = st.columns(3)
+    m1.markdown(f"<div class='metric-card'><small>TEMP</small><h2>{temp}°C</h2></div>", unsafe_allow_html=True)
+    m2.markdown(f"<div class='metric-card'><small>PRESSURE</small><h2>{press} hPa</h2></div>", unsafe_allow_html=True)
+    m3.markdown(f"<div class='metric-card'><small>WIND</small><h2>{wind} KT</h2></div>", unsafe_allow_html=True)
 
-    # 2. ניתוח חכם (Expert Analysis)
-    raw_l = raw.lower()
-    if 'ts' in raw_l: status, color = "THUNDERSTORM ALERT ⛈️", "#ff4b4b"
-    elif 'ra' in raw_l: status, color = "PRECIPITATION ACTIVE 🌧️", "#37a0ea"
-    elif 'fg' in raw_l: status, color = "LOW VISIBILITY / FOG 🌫️", "#8b949e"
-    else: status, color = "OPTIMAL CONDITIONS ☀️", "#00d4ff"
-
-    st.markdown(f"<div class='status-bar' style='background: {color}22; color: {color}; border: 1px solid {color};'>{status}</div>", unsafe_allow_html=True)
-
-    # 3. תצוגת מדדים (Metrics Dashboard)
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.markdown(f"<div class='metric-container'><small>TEMPERATURE</small><h2>{temp}°C</h2></div>", unsafe_allow_html=True)
-    with col2:
-        st.markdown(f"<div class='metric-container'><small>PRESSURE</small><h2>{press} h
+    st.markdown(f"### 🛡️ System Analysis")
+    if press < 1010: st.warning("Low Pressure: Instability detected.")
+    else: st.success("Stable High Pressure.")
+    
+    with st.expander("RAW METAR"): st.code(raw)
         
