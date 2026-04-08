@@ -1,69 +1,71 @@
 import streamlit as st
 import requests
-import pandas as pd
-from datetime import datetime
 
-# הגדרות דף - עיצוב אדפטיבי (Adaptive UI)
-st.set_page_config(page_title="SkyCast Tactical v5", layout="wide")
+# UI Setup
+st.set_page_config(page_title="SkyCast Tactical", layout="wide")
 
-# CSS לשיפור נראות ב-Light/Dark Mode וכרטיסים מעוצבים
 st.markdown("""
     <style>
-    .reportview-container { background: #f0f2f6; }
     .metric-card {
-        border: 1px solid #d1d5db;
+        border: 2px solid #4facfe;
         border-radius: 12px;
         padding: 15px;
-        background-color: rgba(128, 128, 128, 0.05);
+        text-align: center;
+        margin-bottom: 10px;
     }
-    h1 { margin-bottom: 0px; }
     </style>
     """, unsafe_allow_html=True)
 
-# אתחול היסטוריה בזיכרון (Session State)
-if 'history' not in st.session_state:
-    st.session_state.history = pd.DataFrame(columns=['Time', 'Pressure', 'Temp'])
-
-def get_weather(icao):
-    token = "_uQltLt28HcleET_j3ys_OOlLJdnzmwQS5hqJQ3b9t0"
+def get_data(icao):
+    tkn = "_uQltLt28HcleET_j3ys_OOlLJdnzmwQS5hqJQ3b9t0"
     url = f"https://avwx.rest/api/metar/{icao}"
     try:
-        res = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=10)
-        return res.json() if res.status_code == 200 else None
+        r = requests.get(url, headers={"Authorization": f"Bearer {tkn}"})
+        return r.json() if r.status_code == 200 else None
     except: return None
 
-# תפריט צד
-with st.sidebar:
-    st.header("SENSORS CONTROL")
-    cities = {
-        "Tel Aviv (Ben Gurion)": "LLBG",
-        "London (Heathrow)": "EGLL",
-        "New York (JFK)": "KJFK",
-        "Larnaca (Cyprus)": "LCLK",
-        "Tokyo (Haneda)": "RJTT"
-    }
-    sel_name = st.selectbox("Select Station", list(cities.keys()))
-    icao = cities[sel_name]
-    refresh = st.button("EXECUTE DATA REFRESH 🔄")
+# Sidebar
+st.sidebar.title("STATION SELECT")
+cities = {"Tel Aviv": "LLBG", "London": "EGLL", "NY": "KJFK", "Larnaca": "LCLK"}
+sel = st.sidebar.selectbox("City", list(cities.keys()))
+if st.sidebar.button("REFRESH"): st.rerun()
 
-data = get_weather(icao)
+data = get_data(cities[sel])
 
 if data:
-    # שליפת נתונים
-    temp = data.get('temperature', {}).get('value', 0)
-    press = data.get('altimeter', {}).get('value', 1013)
-    wind = data.get('wind_speed', {}).get('value', 0)
-    vis = data.get('visibility', {}).get('value', "N/A")
-    raw = data.get('raw', '')
-    flight_rules = data.get('flight_rules', 'VFR')
-    
-    # עדכון היסטוריה (כדי שהגרף יתחיל לזוז)
-    current_time = datetime.now().strftime("%H:%M:%S")
-    new_entry = pd.DataFrame([[current_time, press, temp]], columns=['Time', 'Pressure', 'Temp'])
-    st.session_state.history = pd.concat([st.session_state.history, new_entry], ignore_index=True).tail(15)
+    # Basic Specs
+    val = lambda k: data.get(k, {}).get('value', 'N/A')
+    temp, press, wind = val('temperature'), val('altimeter'), val('wind_speed')
+    vis, dew, hum = val('visibility'), val('dewpoint'), data.get('relative_humidity', 'N/A')
+    raw = data.get('raw', '').lower()
 
-    # לוגיקת סטטוס ויזואלי (Icons & Colors)
-    raw_l = raw.lower()
-    if 'ts' in raw_l: icon, status, color = "⛈️", "THUNDERSTORM", "#FF4B4B"
-    elif any(x in raw_l for x in ['ra
-                                  
+    # Weather Logic (Short lines to avoid errors)
+    if 'ts' in raw: icon, status = "⛈️", "STORM"
+    elif 'ra' in raw or 'dz' in raw: icon, status = "🌧️", "RAIN"
+    elif 'fg' in raw or 'br' in raw: icon, status = "🌫️", "FOG"
+    elif 'ovc' in raw or 'bkn' in raw: icon, status = "☁️", "CLOUDY"
+    else: icon, status = "☀️", "CLEAR"
+
+    # Display
+    st.markdown(f"<h1 style='text-align:center;'>{icon} {status}</h1>", unsafe_allow_html=True)
+    
+    # Grid System
+    c1, c2, c3 = st.columns(3)
+    c1.markdown(f"<div class='metric-card'><h3>TEMP</h3><h2>{temp}°C</h2></div>", True)
+    c2.markdown(f"<div class='metric-card'><h3>PRESS</h3><h2>{press} hPa</h2></div>", True)
+    c3.markdown(f"<div class='metric-card'><h3>WIND</h3><h2>{wind} KT</h2></div>", True)
+
+    st.markdown("### 📊 Advanced Sensors")
+    a1, a2, a3 = st.columns(3)
+    a1.metric("Visibility", f"{vis} m")
+    a2.metric("Humidity", f"{round(hum, 1) if hum != 'N/A' else 'N/A'}%")
+    a3.metric("Dew Point", f"{dew}°C")
+
+    # Analysis
+    st.info(f"Flight Rules: {data.get('flight_rules', 'N/A')}")
+    if press < 1010: st.warning("Low pressure detected. Frontal activity likely.")
+    
+    with st.expander("RAW DATA"): st.code(data.get('raw', ''))
+else:
+    st.error("Sensor Offline.")
+    
