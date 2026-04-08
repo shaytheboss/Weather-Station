@@ -1,20 +1,28 @@
 import streamlit as st
 import requests
 import pandas as pd
-import numpy as np
-from datetime import datetime
+import time
 
-# הגדרות מערכת
-st.set_page_config(page_title="SkyCast Analytics", page_icon="📈", layout="wide")
+# הגדרות דף
+st.set_page_config(page_title="SkyCast Tactical v4", layout="wide")
 
-# CSS מתקדם ל-Dashboard כהה
+# CSS לשיפור ניגודיות ועיצוב מקצועי (עובד מעולה גם בבהיר וגם בכהה)
 st.markdown("""
     <style>
-    .main { background-color: #0b0e14; color: #e6edf3; }
-    .stMetric { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 15px; }
-    .status-box { padding: 20px; border-radius: 15px; margin-bottom: 20px; border: 1px solid #30363d; }
+    .metric-box {
+        border: 2px solid #edeff2;
+        border-radius: 15px;
+        padding: 20px;
+        background-color: rgba(255, 255, 255, 0.05);
+        text-align: center;
+    }
+    .main { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
     </style>
     """, unsafe_allow_html=True)
+
+# ניהול היסטוריה בזיכרון של האפליקציה (כדי שהגרף לא יהיה קו ישר)
+if 'history' not in st.session_state:
+    st.session_state.history = pd.DataFrame(columns=['Time', 'Pressure', 'Temp'])
 
 def get_weather(icao):
     token = "_uQltLt28HcleET_j3ys_OOlLJdnzmwQS5hqJQ3b9t0"
@@ -24,81 +32,80 @@ def get_weather(icao):
         return res.json() if res.status_code == 200 else None
     except: return None
 
-# כותרת
-st.title("📡 SKYCAST ANALYTICS PRO")
-st.markdown("---")
-
-# תפריט צדדי לבחירה
+# תפריט צד
 with st.sidebar:
-    st.header("Settings")
-    cities = {"Tel Aviv": "LLBG", "London": "EGLL", "New York": "KJFK", "Paris": "LFPG", "Larnaca": "LCLK", "Tokyo": "RJTT"}
-    sel_name = st.selectbox("Select Target Station", list(cities.keys()))
+    st.title("控制台 Control") # מראה טכנולוגי
+    cities = {"Tel Aviv": "LLBG", "London": "EGLL", "New York": "KJFK", "Larnaca": "LCLK", "Tokyo": "RJTT"}
+    sel_name = st.selectbox("Select Station", list(cities.keys()))
     icao = cities[sel_name]
-    refresh = st.button("FORCE REFRESH 🔄")
+    refresh = st.button("UPDATE SENSORS 🔄")
 
 data = get_weather(icao)
 
 if data:
-    # שליפת נתונים
+    # שליפת נתונים מורחבת
     temp = data.get('temperature', {}).get('value', 0)
     press = data.get('altimeter', {}).get('value', 1013)
     wind = data.get('wind_speed', {}).get('value', 0)
+    vis = data.get('visibility', {}).get('value', "N/A")
     raw = data.get('raw', '')
-    lat = data.get('meta', {}).get('latitude', 32.0)
-    lon = data.get('meta', {}).get('longitude', 34.8)
+    
+    # עדכון היסטוריה לגרף (מוסיף נקודה בכל רענון)
+    new_entry = pd.DataFrame([[datetime.now().strftime("%H:%M:%S"), press, temp]], columns=['Time', 'Pressure', 'Temp'])
+    st.session_state.history = pd.concat([st.session_state.history, new_entry]).tail(20)
 
-    # לוגיקת תמונה ותצוגה חכמה
+    # לוגיקת מצב שמיים ואייקונים
     raw_l = raw.lower()
-    img = "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1200" # Default Mountain
-    status_msg = "STABLE"
-    
-    if any(x in raw_l for x in ['ra', 'dz', 'sh', 'sn']): 
-        img = "https://images.unsplash.com/photo-1534274988757-a28bf1a57c17?w=1200"
-        status_msg = "PRECIPITATION"
-    elif any(x in raw_l for x in ['fg', 'br', 'hz']):
-        img = "https://images.unsplash.com/photo-1485236715598-c8879a636a81?w=1200"
-        status_msg = "LOW VISIBILITY"
-    elif 'ts' in raw_l:
-        img = "https://images.unsplash.com/photo-1605727216801-e27ce1d0cc28?w=1200"
-        status_msg = "STORM CELL"
+    if 'ts' in raw_l: icon, status, color = "⛈️", "THUNDERSTORM", "#ff4b4b"
+    elif any(x in raw_l for x in ['ra', 'dz', 'sh']): icon, status, color = "🌧️", "RAINY", "#007bff"
+    elif any(x in raw_l for x in ['fg', 'br']): icon, status, color = "🌫️", "FOG/MIST", "#6c757d"
+    elif 'ovc' in raw_l: icon, status, color = "☁️", "OVERCAST", "#555"
+    else: icon, status, color = "☀️", "CLEAR SKIES", "#ffa500"
 
-    # תצוגה ראשית: תמונה ומדדים
-    st.image(img, use_container_width=True)
-    
-    col1, col2, col3 = st.columns(3)
-    col1.metric("TEMPERATURE", f"{temp}°C")
-    col2.metric("PRESSURE", f"{press} hPa", delta=f"{round(press-1013.25, 2)} vs Std")
-    col3.metric("WIND SPEED", f"{wind} KT")
+    # תצוגה ראשית
+    st.markdown(f"<h1 style='text-align: center; color: {color};'>{icon} {status}</h1>", unsafe_allow_html=True)
+    st.markdown(f"<p style='text-align: center;'>Station: {sel_name} ({icao}) | Live Data Stream</p>", unsafe_allow_html=True)
+
+    # מדדים בשורה אחת
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("TEMP", f"{temp}°C")
+    c2.metric("PRESSURE", f"{press} hPa")
+    c3.metric("WIND", f"{wind} KT")
+    c4.metric("VISIBILITY", f"{vis} m")
 
     st.markdown("---")
 
-    # פיצ'ר חדש: מפת מיקום השדה
-    st.subheader(f"📍 Station Location: {sel_name}")
-    map_data = pd.DataFrame({'lat': [lat], 'lon': [lon]})
-    st.map(map_data, zoom=10)
-
-    # פיצ'ר חדש: גרף סימולציית מגמה (Trend Analysis)
-    # מכיוון שה-API החינמי לא נותן היסטוריה, אנחנו יוצרים סימולציה של ה-24 שעות האחרונות המבוססת על הלחץ הנוכחי
-    st.subheader("📊 24h Pressure Trend (Analytical Simulation)")
-    chart_data = pd.DataFrame(
-        np.random.randn(24, 1) * 0.5 + press,
-        columns=['Pressure (hPa)']
-    )
-    st.line_chart(chart_data)
-
-    # ניתוח מערכת
-    st.subheader("🔍 AI Tactical Analysis")
-    with st.container():
-        if press < 1005:
-            st.error(f"CRITICAL: Extreme Low Pressure detected at {icao}. Expected heavy turbulence and rapid weather deterioration.")
-        elif press < 1010:
-            st.warning("CAUTION: Frontal system approaching. Watch for wind shear.")
+    # גרפים אמיתיים (נבנים עם כל רענון)
+    col_g1, col_g2 = st.columns(2)
+    with col_g1:
+        st.subheader("Pressure Trend (Live)")
+        if len(st.session_state.history) > 1:
+            st.line_chart(st.session_state.history.set_index('Time')['Pressure'])
         else:
-            st.success("NOMINAL: High pressure dominance. Clear operational conditions.")
+            st.info("Collecting data points... Press 'Update' to build the trend.")
+    
+    with col_g2:
+        st.subheader("Temperature Stability")
+        if len(st.session_state.history) > 1:
+            st.area_chart(st.session_state.history.set_index('Time')['Temp'])
+        else:
+            st.info("Wait for next update...")
 
-    with st.expander("TECHNICAL RAW DATA"):
+    # נתונים טכניים נוספים מה-API
+    st.subheader("🛠️ Tactical Specs")
+    t1, t2 = st.columns(2)
+    with t1:
+        flight_rules = data.get('flight_rules', 'N/A')
+        st.markdown(f"**Flight Rules:** {flight_rules}")
+        st.caption("VFR = Visual, IFR = Instrument (Low Visibility)")
+    with t2:
+        dew = data.get('dewpoint', {}).get('value', 'N/A')
+        st.markdown(f"**Dew Point:** {dew}°C")
+        st.caption("Cloud formation probability indicator")
+
+    with st.expander("RAW AVIATION METAR"):
         st.code(raw)
 
 else:
-    st.error("Connection Timeout: Unable to reach Aviation Servers.")
+    st.error("Station Offline or API Limit reached.")
     
